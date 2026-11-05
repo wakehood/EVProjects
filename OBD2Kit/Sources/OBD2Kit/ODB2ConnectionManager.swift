@@ -53,6 +53,7 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
     public var rawVcuHighTemp = 35.0
     public var rawVcuLowTemp  = 28.0
 
+    public var alertGroundFault = 0
     public var alertHardware = 0
     public var alertCCensus = 0
     public var alertTCensus = 0
@@ -60,11 +61,8 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
     public var alertLVC = 0
     public var alertHiTemp = 0
     public var alertLoTemp = 0
-
-    public var vcuAlertHiTemp = 0
-    public var vcuAlertPowerLimit = 0
-    public var vcuAlertMotorFault = 0
-    public var vcuAlertElectricalFault = 0
+    public var alertNotLocked = 0
+    public var alertIllegalConf = 0
 
     public var isBurstTesting = false
     public var burstSentCount = 0
@@ -256,12 +254,6 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         get {(self.customServiceResp + self.mcuCurKwhPid).replacingOccurrences(of: " ", with: "")}
     }
 
-    //MCU Ground Fault Monitor
-    private let mcuGFMPid: String    = "DD 8F"
-
-    var mcuGFMResp: String {
-        get {(self.customServiceResp + self.mcuGFMPid).replacingOccurrences(of: " ", with: "")}
-    }
 
 
     public init(isPreviewMock: Bool = false, autoConnect: Bool = true) {
@@ -312,13 +304,16 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         self.rawPackCapacityKwh = 20.0
         self.rawCurrentKwh = Double(self.rawSOCPercentage) / 100.0 * self.rawPackCapacityKwh
 
-        self.alertHardware = 0
-        self.alertCCensus  = 0
-        self.alertTCensus  = 0
-        self.alertHVC      = 0
-        self.alertLVC      = 0
-        self.alertHiTemp   = 0
-        self.alertLoTemp   = 0
+        self.alertGroundFault = 0
+        self.alertHardware    = 0
+        self.alertCCensus     = 0
+        self.alertTCensus     = 0
+        self.alertHVC         = 0
+        self.alertLVC         = 0
+        self.alertHiTemp      = 0
+        self.alertLoTemp      = 0
+        self.alertNotLocked   = 0
+        self.alertIllegalConf = 0
 
         mockAlertTick = 0
         mockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -350,14 +345,17 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
                 // Every 8 seconds toggle a random alert bit to demonstrate the alert UI
                 self.mockAlertTick += 1
                 if self.mockAlertTick % 8 == 0 {
-                    switch Int.random(in: 0...6) {
-                    case 0: self.alertHardware = self.alertHardware == 0 ? 1 : 0
-                    case 1: self.alertCCensus  = self.alertCCensus  == 0 ? 1 : 0
-                    case 2: self.alertTCensus  = self.alertTCensus  == 0 ? 1 : 0
-                    case 3: self.alertHVC      = self.alertHVC      == 0 ? 1 : 0
-                    case 4: self.alertLVC      = self.alertLVC      == 0 ? 1 : 0
-                    case 5: self.alertHiTemp   = self.alertHiTemp   == 0 ? 1 : 0
-                    default: self.alertLoTemp  = self.alertLoTemp   == 0 ? 1 : 0
+                    switch Int.random(in: 0...9) {
+                    case 0:  self.alertGroundFault  = self.alertGroundFault  == 0 ? 1 : 0
+                    case 1:  self.alertHardware     = self.alertHardware     == 0 ? 1 : 0
+                    case 2:  self.alertCCensus      = self.alertCCensus      == 0 ? 1 : 0
+                    case 3:  self.alertTCensus      = self.alertTCensus      == 0 ? 1 : 0
+                    case 4:  self.alertHVC          = self.alertHVC          == 0 ? 1 : 0
+                    case 5:  self.alertLVC          = self.alertLVC          == 0 ? 1 : 0
+                    case 6:  self.alertHiTemp       = self.alertHiTemp       == 0 ? 1 : 0
+                    case 7:  self.alertLoTemp       = self.alertLoTemp       == 0 ? 1 : 0
+                    case 8:  self.alertNotLocked    = self.alertNotLocked    == 0 ? 1 : 0
+                    default: self.alertIllegalConf  = self.alertIllegalConf  == 0 ? 1 : 0
                     }
                 }
             }
@@ -768,18 +766,16 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         rawVcuHighTemp = 0.0
         rawVcuLowTemp = 0.0
 
-        alertHardware = 0
-        alertCCensus = 0
-        alertTCensus = 0
-        alertHVC = 0
-        alertLVC = 0
-        alertHiTemp = 0
-        alertLoTemp = 0
-
-        vcuAlertHiTemp = 0
-        vcuAlertPowerLimit = 0
-        vcuAlertMotorFault = 0
-        vcuAlertElectricalFault = 0
+        alertGroundFault = 0
+        alertHardware    = 0
+        alertCCensus     = 0
+        alertTCensus     = 0
+        alertHVC         = 0
+        alertLVC         = 0
+        alertHiTemp      = 0
+        alertLoTemp      = 0
+        alertNotLocked   = 0
+        alertIllegalConf = 0
 
         isChargingAllowed = false
         isChargePlugConnected = false
@@ -1101,14 +1097,17 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         }
 
         if let r = clean.range(of: self.mcuStatusResp),
-           let byteAA = Int(String(clean[r.upperBound..<clean.index(r.upperBound, offsetBy: 2)]), radix: 16) {
-            self.alertHardware = (byteAA >> 6) & 1
-            self.alertCCensus  = (byteAA >> 5) & 1
-            self.alertTCensus  = (byteAA >> 4) & 1
-            self.alertHVC      = (byteAA >> 3) & 1
-            self.alertLVC      = (byteAA >> 2) & 1
-            self.alertHiTemp   = (byteAA >> 1) & 1
-            self.alertLoTemp   = (byteAA >> 0) & 1
+           let status16 = Int(String(clean[r.upperBound..<clean.index(r.upperBound, offsetBy: 4)]), radix: 16) {
+            self.alertGroundFault  = (status16 & MCUConstants.AlertMask.groundFault)  != 0 ? 1 : 0
+            self.alertHardware     = (status16 & MCUConstants.AlertMask.hardware)     != 0 ? 1 : 0
+            self.alertCCensus      = (status16 & MCUConstants.AlertMask.cCensus)      != 0 ? 1 : 0
+            self.alertTCensus      = (status16 & MCUConstants.AlertMask.tCensus)      != 0 ? 1 : 0
+            self.alertHVC          = (status16 & MCUConstants.AlertMask.hvc)          != 0 ? 1 : 0
+            self.alertLVC          = (status16 & MCUConstants.AlertMask.lvc)          != 0 ? 1 : 0
+            self.alertHiTemp       = (status16 & MCUConstants.AlertMask.hiTemp)       != 0 ? 1 : 0
+            self.alertLoTemp       = (status16 & MCUConstants.AlertMask.loTemp)       != 0 ? 1 : 0
+            self.alertNotLocked    = (status16 & MCUConstants.AlertMask.notLocked)    != 0 ? 1 : 0
+            self.alertIllegalConf  = (status16 & MCUConstants.AlertMask.illegalConf)  != 0 ? 1 : 0
             self.hasReceivedStatus = true
         }
 

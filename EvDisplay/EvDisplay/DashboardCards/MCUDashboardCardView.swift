@@ -37,10 +37,11 @@ struct MCUDashboardCardView: View {
     private let scaleThresholds: [Double] = [0, 2, 5, 10, 20, 50, 100, 200, 500]
 
     private var anyAlert: Bool {
-        manager.alertHardware == 1 || manager.alertCCensus == 1 ||
-        manager.alertTCensus == 1 || manager.alertHVC == 1  ||
-        manager.alertLVC == 1    || manager.alertHiTemp == 1 ||
-        manager.alertLoTemp == 1
+        manager.alertGroundFault == 1 || manager.alertHardware == 1 ||
+        manager.alertCCensus == 1    || manager.alertTCensus == 1   ||
+        manager.alertHVC == 1        || manager.alertLVC == 1       ||
+        manager.alertHiTemp == 1     || manager.alertLoTemp == 1    ||
+        manager.alertNotLocked == 1  || manager.alertIllegalConf == 1
     }
 
     var body: some View {
@@ -203,7 +204,7 @@ struct MCUDashboardCardView: View {
                         .foregroundColor(.secondary)
                         .padding(.leading, 20)
                         .padding(.top, 4)
-                        .padding(.bottom, isIPad ? 30 : 20)
+                        .padding(.bottom, isIPad ? 20 : 10)
                      
                         
                     }
@@ -286,6 +287,7 @@ struct MCUDashboardCardView: View {
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
+            .padding(.bottom, 20)
             .frame(height: bottomH)
         }
     }
