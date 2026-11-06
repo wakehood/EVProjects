@@ -10,7 +10,7 @@
 public enum MCUConstants {
     public static let minimumFirmwareMajor: Int = 1
     public static let minimumFirmwareMinor: Int = 3
-    public static let minimumFirmwarePatch: Int = 6
+    public static let minimumFirmwarePatch: Int = 7
 
     public static var minimumFirmwareString: String {
         "V\(minimumFirmwareMajor).\(minimumFirmwareMinor).\(minimumFirmwarePatch)"
