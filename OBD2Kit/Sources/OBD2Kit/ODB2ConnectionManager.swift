@@ -76,12 +76,6 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
     public var pollingMetricsVoltageCount = 0
     public var pollingMetricsSlowCount = 0
 
-    // When true, handshake ends with AT MA (Monitor All) instead of starting polling.
-    // The ELM327 streams every CAN frame it sees; use this to verify injected frames
-    // reach the bus before testing the autonomous message path.
-    // Must be set before connecting. To stop, disconnect.
-    public var isMonitorModeActive = false
-
     private var centralManager: CBCentralManager?
     private var obdPeripheral: CBPeripheral?
     private var scanTimeoutTask: DispatchWorkItem?
@@ -531,8 +525,7 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
             case 9:  self.sendCommand(self.mcuLvcReq)
             case 10: self.sendCommand(self.mcuMaxKwhReq)
             case 11:
-                if self.isMonitorModeActive { self.sendCommand("AT MA") }
-                else { self.startAutomaticPolling() }
+                self.startAutomaticPolling()
             default: break
             }
         }
@@ -934,20 +927,6 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         else { return }
 
         incomingBuffer += fragment
-
-        // In AT MA monitor mode the ELM327 streams \r-terminated lines with no > prompt.
-        // Only switch to line-based parsing after the handshake is complete (step 11).
-        if isMonitorModeActive && currentInitStep >= 11 {
-            var parts = incomingBuffer.components(separatedBy: "\r")
-            incomingBuffer = incomingBuffer.hasSuffix("\r") ? "" : (parts.removeLast())
-            for part in parts {
-                let trimmed = part.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-                guard !trimmed.isEmpty else { continue }
-                print("[monitor] \(trimmed)")
-                logMessage("[monitor] \(trimmed)")
-            }
-            return
-        }
 
         // The ELM327 always terminates a complete response with ">". Waiting for ">" instead
         // of any "\r" ensures we don't process partial multi-line responses prematurely.
