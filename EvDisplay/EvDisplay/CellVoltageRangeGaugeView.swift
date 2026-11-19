@@ -62,21 +62,35 @@ struct CellVoltageRangeGaugeView: View {
 
                 // ── Min/max voltage labels above bar (collision-aware) ──
                 let edgeGuard: CGFloat = isIPad ? 28 : 18
-                let rawMinLX:  CGFloat = min(max(minX, edgeGuard), w - edgeGuard)
-                let rawMaxLX:  CGFloat = min(max(maxX, edgeGuard), w - edgeGuard)
-                let labelSepX: CGFloat = isIPad ? 72 : 44
-                let labelMidX  = (rawMinLX + rawMaxLX) / 2
-                let halfSepX   = max(abs(rawMaxLX - rawMinLX) / 2, labelSepX / 2)
-                let adjMinLX   = min(max(labelMidX - halfSepX, edgeGuard), w - edgeGuard)
-                // Ensure maxLX is always at least labelSepX to the right of minLX (handles equal-value case)
-                let adjMaxLX   = min(max(labelMidX + halfSepX, adjMinLX + labelSepX), w - edgeGuard)
+                let labelSepX: CGFloat = isIPad ? 56 : 38
 
-                Text(String(format: "%.3fV", cellMin))
+                // Clamp both label centres to the drawable strip
+                var adjMinLX = min(max(minX, edgeGuard), w - edgeGuard)
+                var adjMaxLX = min(max(maxX, edgeGuard), w - edgeGuard)
+
+                // If too close, push apart around their midpoint then shift
+                // the pair as a unit to keep both within the drawable strip.
+                if adjMaxLX - adjMinLX < labelSepX {
+                    let mid = (adjMinLX + adjMaxLX) / 2
+                    adjMinLX = mid - labelSepX / 2
+                    adjMaxLX = mid + labelSepX / 2
+                    if adjMinLX < edgeGuard {
+                        adjMaxLX += edgeGuard - adjMinLX
+                        adjMinLX  = edgeGuard
+                    }
+                    if adjMaxLX > w - edgeGuard {
+                        adjMinLX -= adjMaxLX - (w - edgeGuard)
+                        adjMaxLX  = w - edgeGuard
+                        adjMinLX  = max(adjMinLX, edgeGuard)
+                    }
+                }
+
+                Text(String(format: "%.2fV", cellMin))
                     .font(.system(size: isIPad ? 12 : 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(.white)
                     .position(x: adjMinLX, y: labelH / 2)
 
-                Text(String(format: "%.3fV", cellMax))
+                Text(String(format: "%.2fV", cellMax))
                     .font(.system(size: isIPad ? 12 : 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(.white)
                     .position(x: adjMaxLX, y: labelH / 2)

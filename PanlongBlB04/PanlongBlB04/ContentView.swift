@@ -125,23 +125,6 @@ struct OBD2DashboardView: View {
                     }
                     .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
 
-                    // CAN Bus Monitor Mode Card
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("CAN Bus Monitor Mode (AT MA)").font(.caption).foregroundColor(.purple).fontWeight(.bold)
-                            Text(bluetoothManager.isMonitorModeActive
-                                 ? (bluetoothManager.isConnected ? "Active — all CAN frames printing to console" : "Enabled — will activate on next connect")
-                                 : "Disabled — normal polling on connect")
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundColor(bluetoothManager.isMonitorModeActive ? .purple : .secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $bluetoothManager.isMonitorModeActive)
-                            .labelsHidden()
-                            .tint(.purple)
-                            .disabled(bluetoothManager.isConnected)
-                    }
-                    .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
 
                     // BLE Peripheral Scanner — scan all BLE devices to diagnose adapter service UUIDs
                     BLEScanCard()

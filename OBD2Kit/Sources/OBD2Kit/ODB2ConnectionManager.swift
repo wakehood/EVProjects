@@ -103,6 +103,9 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
     private var burstRunResults: [(rps: Double, successRate: Double, timeouts: Int)] = []
     private var pollingMetricsStartInstant: ContinuousClock.Instant?
     private var pollingMetricsDurationWorkItem: DispatchWorkItem?
+    private var runtimeTimer: Timer?
+    private var xSlowQueueIndex = 0
+    private var xSlowCounter = 0
     private var mockAlertTick = 0
 
     public let isPreviewMock: Bool
@@ -509,7 +512,7 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         let delay: TimeInterval
         switch currentInitStep {
         case 1:  delay = 1.5
-        case 11: delay = 0.5
+        case 14: delay = 0.5
         default: delay = 0.4
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -524,7 +527,10 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
             case 8:  self.sendCommand(self.mcuHvcReq)
             case 9:  self.sendCommand(self.mcuLvcReq)
             case 10: self.sendCommand(self.mcuMaxKwhReq)
-            case 11:
+            case 11: self.sendCommand(self.mcuSocReq)
+            case 12: self.sendCommand(self.mcuCurKwhReq)
+            case 13: self.sendCommand(self.mcuRunTimeReq)
+            case 14:
                 self.startAutomaticPolling()
             default: break
             }
@@ -536,6 +542,8 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         isPollingActive = true
         pollTickCounter = 0
         slowQueueIndex = 0
+        xSlowQueueIndex = 0
+        xSlowCounter = 0
         sendNextPollingCommand()
     }
 
@@ -546,11 +554,15 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
     }
 
     // Fast lane (slots 0 and 1 of every 3-tick cycle): current and voltage on every pass.
-    // Slow lane (slot 2): one item from this queue per cycle, rotating through all 9.
-    // At ~150 ms/round-trip: current & voltage refresh ~450 ms, slow items ~4 s full rotation.
+    // Slow lane (slot 2): status, cell min/max — full rotation ~1.4 s at ideal speed.
+    // X-slow lane: fires one x-slow item every xSlowInterval slow slots (~1 min/item at real-world BLE speed).
+    private let xSlowInterval = MCUConstants.xSlowInterval  // every 67 slow slots ≈ 3 min/item at ~300 ms real round-trip
+    
     private var slowPollQueue: [String] {
-        [mcuRunTimeReq, mcuSocReq, mcuStatusReq, mcuTempReq, mcuCurKwhReq,
-         mcuCellMinReq, mcuCellMaxReq, mcuCellAvgReq, mcuStdDevReq]
+        [mcuStatusReq, mcuCellMinReq, mcuCellMaxReq]
+    }
+    private var xSlowPollQueue: [String] {
+        [mcuSocReq, mcuCurKwhReq, mcuTempReq]
     }
 
     private func sendNextPollingCommand() {
@@ -563,9 +575,16 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         case 1:
             cmd = mcuPackVoltReq
         default:
-            let slow = slowPollQueue
-            cmd = slow[slowQueueIndex % slow.count]
-            slowQueueIndex += 1
+            xSlowCounter += 1
+            if xSlowCounter % xSlowInterval == 0 {
+                let xSlow = xSlowPollQueue
+                cmd = xSlow[xSlowQueueIndex % xSlow.count]
+                xSlowQueueIndex += 1
+            } else {
+                let slow = slowPollQueue
+                cmd = slow[slowQueueIndex % slow.count]
+                slowQueueIndex += 1
+            }
         }
         if isPollingMetricsRunning {
             pollingMetricsTotalCount += 1
@@ -726,9 +745,22 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         print("  [burst] sent=\(burstSentCount) rcvd=\(burstReplyCount) to=\(burstTimeoutCount) rps=\(String(format: "%.1f", rps))")
     }
 
+    // Runtime is seeded once at handshake and then driven by a local 1-second timer.
+    private func startRuntimeTimer() {
+        runtimeTimer?.invalidate()
+        runtimeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.rawRunTimeSeconds += 1
+            let v = self.rawRunTimeSeconds
+            self.mcuRunTime = String(format: "%02d:%02d:%02d", v / 3600, (v % 3600) / 60, v % 60)
+        }
+    }
+
     // MARK: - Telemetry Reset
 
     private func resetTelemetry() {
+        runtimeTimer?.invalidate()
+        runtimeTimer = nil
         mcuRunTime = "--:--:--"
         mcuVersion = "--.--"
         mcuPackVoltage = "--.- V"
@@ -978,7 +1010,7 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
             print("[elm error] step=\(currentInitStep) '\(trimmed)'")
             logMessage("[elm] \(trimmed)")
             pendingResponsePrefix = nil
-            if currentInitStep < 11 {
+            if currentInitStep < 14 {
                 advanceHandshake()
             } else {
                 pollingWatchdog?.cancel()
@@ -1033,6 +1065,8 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         if let v = getVal(mcuRunTimeResp) {
             self.rawRunTimeSeconds = v
             self.mcuRunTime = String(format: "%02d:%02d:%02d", v / 3600, (v % 3600) / 60, v % 60)
+            self.startRuntimeTimer()
+            if currentInitStep == 13 { advanceHandshake() }
         }
 
         if let r = clean.range(of: mcuVersionResp),
@@ -1073,6 +1107,7 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
            let soc = Int(clean[r.upperBound..<clean.index(r.upperBound, offsetBy: 2)], radix: 16) {
             self.rawSOCPercentage = min(soc, 100)
             self.mcuSOC = "\(self.rawSOCPercentage)%"
+            if currentInitStep == 11 { advanceHandshake() }
         }
 
         if let r = clean.range(of: self.mcuStatusResp),
@@ -1129,6 +1164,7 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
 
         if let v = getVal(mcuCurKwhResp) {
             self.rawCurrentKwh = Double(v) * 0.1
+            if currentInitStep == 12 { advanceHandshake() }
         }
     }
 }

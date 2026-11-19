@@ -30,4 +30,9 @@ public enum MCUConstants {
         public static let notLocked:    Int = 0x0080  // configuration not locked
         public static let illegalConf:  Int = 0x0040  // illegal device for architecture
     }
+    
+    
+    public static let xSlowInterval: Int = 67 // every 67 slow slots ≈ 3 min/item at ~300 ms real round-trip
+
+    
 }
