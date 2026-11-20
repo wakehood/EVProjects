@@ -157,12 +157,14 @@ struct MCUDashboardCardView: View {
                                     barHeight: barHeight,
                                     barWidth: isIPad ? 22 : 16
                                 )
-                                Text(String(format: "%.2f kW", abs(powerKW)))
+                                Text(String(format: "%5.1f kW", abs(powerKW)))
                                     .font(.system(size: isIPad ? 28 : 20, design: .monospaced))
                                     .fontWeight(.black)
                                     .foregroundColor(powerColor)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.75)
+                                    .contentTransition(.numericText())
+                                    .animation(.easeInOut(duration: 0.3), value: powerKW)
                             }
                              Spacer(minLength: 0)
                         }
@@ -285,6 +287,7 @@ struct MCUDashboardCardView: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 12)
+                .padding(.top, 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .padding(.bottom, 20)
@@ -356,10 +359,14 @@ struct MCUDashboardCardView: View {
                                 barHeight: barHeight,
                                 barWidth: isIPad ? 20 : 14
                             )
-                            Text(String(format: "%.2f kW", abs(powerKW)))
+                            Text(String(format: "%5.1f kW", abs(powerKW)))
                                 .font(.system(.subheadline, design: .monospaced))
                                 .fontWeight(.black)
                                 .foregroundColor(powerColor)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                                .contentTransition(.numericText())
+                                .animation(.easeInOut(duration: 0.3), value: powerKW)
                         }
                         .frame(maxWidth: .infinity, alignment: isIPad ? .center : .leading)
                         Spacer(minLength: 0)
@@ -421,6 +428,7 @@ struct MCUDashboardCardView: View {
                 .frame(height: isIPad ? GaugeMetrics.cellGaugeHeightIPad : GaugeMetrics.cellGaugeHeight)
             }
             .padding(.horizontal, 12)
+            .padding(.top, 6)
 
             Divider()
 

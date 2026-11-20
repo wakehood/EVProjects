@@ -106,6 +106,8 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
     private var runtimeTimer: Timer?
     private var xSlowQueueIndex = 0
     private var xSlowCounter = 0
+    private var candidatePeripherals: [(peripheral: CBPeripheral, rssi: Int)] = []
+    private var selectionWorkItem: DispatchWorkItem?
     private var mockAlertTick = 0
 
     public let isPreviewMock: Bool
@@ -421,6 +423,9 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
         scanTimedOut = false
         isScanning = true
         connectionStatus = String(localized: "Scanning...")
+        candidatePeripherals = []
+        selectionWorkItem?.cancel()
+        selectionWorkItem = nil
         cm.scanForPeripherals(withServices: [serialServiceUUID], options: nil)
 
         scanTimeoutTask?.cancel()
@@ -849,18 +854,47 @@ open class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripher
     }
 
     public func centralManager(_ c: CBCentralManager, didDiscover p: CBPeripheral, advertisementData: [String: Any], rssi: NSNumber) {
-        // Ignore adapters with a weak signal — in a multi-vehicle environment a distant
-        // adapter belonging to someone else would otherwise be grabbed first.
         guard rssi.intValue >= rssiConnectThreshold else { return }
+
+        // Update RSSI if already seen, otherwise add to candidate list.
+        if let idx = candidatePeripherals.firstIndex(where: { $0.peripheral.identifier == p.identifier }) {
+            candidatePeripherals[idx] = (p, rssi.intValue)
+        } else {
+            candidatePeripherals.append((p, rssi.intValue))
+            logMessage("Candidate: \(p.name ?? p.identifier.uuidString) RSSI=\(rssi.intValue) dBm")
+        }
+
+        // Arm a one-shot selection timer the first time a candidate appears.
+        // Keep scanning until it fires so nearby adapters (e.g. a neighbour's OBD dongle)
+        // can be compared — we then connect to the strongest signal.
+        guard selectionWorkItem == nil else { return }
+        let item = DispatchWorkItem { [weak self] in
+            self?.connectToBestCandidate(centralManager: c)
+        }
+        selectionWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: item)
+    }
+
+    private func connectToBestCandidate(centralManager: CBCentralManager) {
         scanTimeoutTask?.cancel()
-        c.stopScan()
-        obdPeripheral = p
-        p.delegate = self
+        selectionWorkItem = nil
+        guard let best = candidatePeripherals.max(by: { $0.rssi < $1.rssi }) else { return }
+        if candidatePeripherals.count > 1 {
+            let others = candidatePeripherals.filter { $0.peripheral.identifier != best.peripheral.identifier }
+            print("[scan] \(candidatePeripherals.count) FFF0 adapters found — selecting RSSI \(best.rssi) dBm: \(best.peripheral.name ?? best.peripheral.identifier.uuidString)")
+            for o in others {
+                print("[scan] ignored RSSI \(o.rssi) dBm: \(o.peripheral.name ?? o.peripheral.identifier.uuidString)")
+            }
+        }
+        candidatePeripherals = []
+        centralManager.stopScan()
+        obdPeripheral = best.peripheral
+        best.peripheral.delegate = self
         DispatchQueue.main.async {
             self.isScanning = false
             self.connectionStatus = String(localized: "Connecting...")
         }
-        c.connect(p, options: nil)
+        centralManager.connect(best.peripheral, options: nil)
         armConnectTimeout()
     }
 

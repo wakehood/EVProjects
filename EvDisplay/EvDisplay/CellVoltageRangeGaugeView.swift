@@ -41,9 +41,34 @@ struct CellVoltageRangeGaugeView: View {
             let minX = xFraction(cellMin) * w
             let maxX = xFraction(cellMax) * w
 
+                // ── Min/max voltage label positions (collision-aware) ──
+                // Computed before the ZStack to avoid mutations inside a @ViewBuilder closure.
+                let edgeGuard: CGFloat = isIPad ? 28 : 18
+                let labelSepX: CGFloat = isIPad ? 56 : 38
+                let (adjMinLX, adjMaxLX): (CGFloat, CGFloat) = {
+                    var aMin = min(max(minX, edgeGuard), w - edgeGuard)
+                    var aMax = min(max(maxX, edgeGuard), w - edgeGuard)
+                    if aMax - aMin < labelSepX {
+                        let mid = (aMin + aMax) / 2
+                        aMin = mid - labelSepX / 2
+                        aMax = mid + labelSepX / 2
+                        if aMin < edgeGuard {
+                            aMax += edgeGuard - aMin
+                            aMin  = edgeGuard
+                        }
+                        if aMax > w - edgeGuard {
+                            aMin -= aMax - (w - edgeGuard)
+                            aMax  = w - edgeGuard
+                            aMin  = max(aMin, edgeGuard)
+                        }
+                    }
+                    return (aMin, aMax)
+                }()
+
             ZStack(alignment: .topLeading) {
 
                 // ── Gradient bar ──
+
                 LinearGradient(
                     colors: [.red, .orange, .yellow, .green, .blue, .cyan, .white],
                     startPoint: .leading,
@@ -59,31 +84,6 @@ struct CellVoltageRangeGaugeView: View {
                     .overlay(Rectangle().stroke(Color.white, lineWidth: 2))
                     .frame(width: max(maxX - minX, 4), height: barH + needleInset * 2)
                     .position(x: (minX + maxX) / 2, y: barTop + barH / 2)
-
-                // ── Min/max voltage labels above bar (collision-aware) ──
-                let edgeGuard: CGFloat = isIPad ? 28 : 18
-                let labelSepX: CGFloat = isIPad ? 56 : 38
-
-                // Clamp both label centres to the drawable strip
-                var adjMinLX = min(max(minX, edgeGuard), w - edgeGuard)
-                var adjMaxLX = min(max(maxX, edgeGuard), w - edgeGuard)
-
-                // If too close, push apart around their midpoint then shift
-                // the pair as a unit to keep both within the drawable strip.
-                if adjMaxLX - adjMinLX < labelSepX {
-                    let mid = (adjMinLX + adjMaxLX) / 2
-                    adjMinLX = mid - labelSepX / 2
-                    adjMaxLX = mid + labelSepX / 2
-                    if adjMinLX < edgeGuard {
-                        adjMaxLX += edgeGuard - adjMinLX
-                        adjMinLX  = edgeGuard
-                    }
-                    if adjMaxLX > w - edgeGuard {
-                        adjMinLX -= adjMaxLX - (w - edgeGuard)
-                        adjMaxLX  = w - edgeGuard
-                        adjMinLX  = max(adjMinLX, edgeGuard)
-                    }
-                }
 
                 Text(String(format: "%.2fV", cellMin))
                     .font(.system(size: isIPad ? 12 : 9, weight: .bold, design: .monospaced))
@@ -106,6 +106,8 @@ struct CellVoltageRangeGaugeView: View {
                     .foregroundStyle(.white.opacity(0.75))
                     .position(x: w - edgeGuard, y: barTop + barH + spacer + cutoffH / 2)
             }
+            .animation(.easeInOut(duration: 0.5), value: cellMin)
+            .animation(.easeInOut(duration: 0.5), value: cellMax)
         }
     }
 }
